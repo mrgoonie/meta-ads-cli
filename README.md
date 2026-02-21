@@ -2,7 +2,7 @@
 
 Create and manage Meta (Facebook/Instagram) ad campaigns from your terminal.
 
-> Built by [Attainment Labs](https://attainment.co)
+> Built by [Attainment Labs](https://attainmentlabs.com)
 
 ## Why
 
@@ -240,7 +240,7 @@ Everything is created as `PAUSED` by default so you can review before spending.
 
 We wrote a free guide covering Meta Ads automation end to end: OAuth setup walkthrough, audience segmentation strategy, budget allocation frameworks, creative testing, scaling rules, and common API errors with fixes.
 
-**[Get the Guide: The Engineer's Playbook for Meta Ads](https://attainment.co/meta-ads-playbook)**
+**[Get the Guide: The Engineer's Playbook for Meta Ads](https://attainmentlabs.com/meta-ads-playbook)**
 
 ## Contributing
 

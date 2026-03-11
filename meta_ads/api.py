@@ -1,8 +1,24 @@
 """Meta Graph API client for ad management."""
 
 import json
+import time
 import click
 import requests
+
+# MIME types by file extension for image uploads
+_MIME_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+# HTTP status codes that warrant a retry
+_RETRYABLE_CODES = {429, 500, 502, 503}
+
+# Allowed HTTP methods
+_ALLOWED_METHODS = {"GET", "POST", "DELETE"}
 
 
 class MetaAPIError(Exception):
@@ -47,9 +63,23 @@ class MetaAdsAPI:
                 click.echo(click.style(f"  Files: {list(kwargs['files'].keys())}", fg="yellow"))
             return {"id": fake_id}
 
-        resp = getattr(requests, method.lower())(url, **kwargs)
+        if method.upper() not in _ALLOWED_METHODS:
+            raise ValueError(f"HTTP method '{method}' is not allowed. Use one of: {_ALLOWED_METHODS}")
 
-        if resp.status_code != 200:
+        for attempt in range(1, 4):
+            resp = getattr(requests, method.lower())(url, timeout=30, **kwargs)
+
+            if resp.status_code == 200:
+                return resp.json()
+
+            if resp.status_code in _RETRYABLE_CODES and attempt < 3:
+                wait = 2 ** attempt  # 2s, 4s
+                click.echo(click.style(
+                    f"  [RETRY {attempt}/3] HTTP {resp.status_code} — retrying in {wait}s...", fg="yellow"
+                ))
+                time.sleep(wait)
+                continue
+
             try:
                 error_data = resp.json().get("error", {})
                 message = error_data.get("message", resp.text)
@@ -59,15 +89,15 @@ class MetaAdsAPI:
                 error_code = None
             raise MetaAPIError(resp.status_code, message, error_code)
 
-        return resp.json()
-
     def upload_image(self, image_path):
         """Upload an ad image to the ad account. Returns the image hash."""
+        suffix = image_path.suffix.lower()
+        mime_type = _MIME_TYPES.get(suffix, "application/octet-stream")
         with open(image_path, "rb") as f:
             result = self._request(
                 "POST",
                 f"{self.act_id}/adimages",
-                files={"filename": (image_path.name, f, "image/png")},
+                files={"filename": (image_path.name, f, mime_type)},
             )
 
         if self.dry_run:

@@ -121,3 +121,61 @@ class TestTimeout:
         api._request("GET", "123", params={"fields": "name"})
         call_kwargs = mock_requests.get.call_args
         assert call_kwargs.kwargs.get("timeout") == 30 or call_kwargs[1].get("timeout") == 30
+
+
+class TestVerbose:
+    """Tests for verbose debug output."""
+
+    def test_verbose_flag_stored(self):
+        api = MetaAdsAPI("token", "123", "456", verbose=True)
+        assert api.verbose is True
+
+    def test_verbose_default_off(self):
+        api = MetaAdsAPI("token", "123", "456")
+        assert api.verbose is False
+
+    @patch("meta_ads.api.requests")
+    def test_verbose_prints_debug(self, mock_requests, capsys):
+        api = MetaAdsAPI("token", "123", "456", dry_run=False, verbose=True)
+        ok_resp = MagicMock(status_code=200)
+        ok_resp.json.return_value = {"id": "123"}
+        mock_requests.get.return_value = ok_resp
+
+        api._request("GET", "123", params={"fields": "name"})
+        output = capsys.readouterr().out
+        assert "[DEBUG]" in output
+        assert "GET" in output
+
+
+class TestPagination:
+    """Tests for paginated endpoints."""
+
+    @patch("meta_ads.api.requests")
+    def test_single_page(self, mock_requests):
+        api = MetaAdsAPI("token", "123", "456", dry_run=False)
+        ok_resp = MagicMock(status_code=200)
+        ok_resp.json.return_value = {"data": [{"id": "1"}, {"id": "2"}]}
+        mock_requests.get.return_value = ok_resp
+
+        result = api.get_ad_sets("campaign_123")
+        assert len(result) == 2
+
+    @patch("meta_ads.api.requests")
+    def test_multi_page(self, mock_requests):
+        api = MetaAdsAPI("token", "123", "456", dry_run=False)
+        # First page with paging.next
+        page1_resp = MagicMock(status_code=200)
+        page1_resp.json.return_value = {
+            "data": [{"id": "1"}],
+            "paging": {"next": "https://graph.facebook.com/v21.0/next_page"},
+        }
+        # Second page (no more pages)
+        page2_resp = MagicMock(status_code=200)
+        page2_resp.json.return_value = {"data": [{"id": "2"}]}
+
+        mock_requests.get.side_effect = [page1_resp, page2_resp]
+
+        result = api.get_ads("campaign_123")
+        assert len(result) == 2
+        assert result[0]["id"] == "1"
+        assert result[1]["id"] == "2"

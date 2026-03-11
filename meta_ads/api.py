@@ -33,7 +33,7 @@ class MetaAPIError(Exception):
 class MetaAdsAPI:
     """Lightweight wrapper around the Meta Marketing API."""
 
-    def __init__(self, access_token, ad_account_id, page_id, api_version="v21.0", dry_run=False):
+    def __init__(self, access_token, ad_account_id, page_id, api_version="v21.0", dry_run=False, verbose=False):
         self.access_token = access_token
         self.ad_account_id = ad_account_id
         self.act_id = f"act_{ad_account_id}"
@@ -41,6 +41,7 @@ class MetaAdsAPI:
         self.api_version = api_version
         self.base_url = f"https://graph.facebook.com/{api_version}"
         self.dry_run = dry_run
+        self.verbose = verbose
         self._dry_run_counter = 0
 
     def _request(self, method, endpoint, **kwargs):
@@ -66,8 +67,17 @@ class MetaAdsAPI:
         if method.upper() not in _ALLOWED_METHODS:
             raise ValueError(f"HTTP method '{method}' is not allowed. Use one of: {_ALLOWED_METHODS}")
 
+        if self.verbose:
+            safe_params = {k: v for k, v in kwargs.get("params", {}).items() if k != "access_token"}
+            click.echo(click.style(f"  [DEBUG] {method} {url}", fg="cyan", dim=True))
+            if safe_params:
+                click.echo(click.style(f"  [DEBUG] Params: {json.dumps(safe_params, indent=2)}", fg="cyan", dim=True))
+
         for attempt in range(1, 4):
             resp = getattr(requests, method.lower())(url, timeout=30, **kwargs)
+
+            if self.verbose:
+                click.echo(click.style(f"  [DEBUG] Response: HTTP {resp.status_code}", fg="cyan", dim=True))
 
             if resp.status_code == 200:
                 return resp.json()
@@ -213,15 +223,27 @@ class MetaAdsAPI:
         """Get campaign details."""
         return self._request("GET", campaign_id, params={"fields": fields})
 
+    def _paginate(self, endpoint, params):
+        """Fetch all pages of a paginated endpoint."""
+        all_data = []
+        result = self._request("GET", endpoint, params=params)
+        all_data.extend(result.get("data", []))
+        while result.get("paging", {}).get("next"):
+            next_url = result["paging"]["next"]
+            resp = requests.get(next_url, timeout=30)
+            if resp.status_code != 200:
+                break
+            result = resp.json()
+            all_data.extend(result.get("data", []))
+        return all_data
+
     def get_ad_sets(self, campaign_id, fields="name,status,daily_budget"):
-        """Get ad sets for a campaign."""
-        result = self._request("GET", f"{campaign_id}/adsets", params={"fields": fields})
-        return result.get("data", [])
+        """Get all ad sets for a campaign (handles pagination)."""
+        return self._paginate(f"{campaign_id}/adsets", {"fields": fields})
 
     def get_ads(self, campaign_id, fields="name,status,effective_status"):
-        """Get ads for a campaign."""
-        result = self._request("GET", f"{campaign_id}/ads", params={"fields": fields})
-        return result.get("data", [])
+        """Get all ads for a campaign (handles pagination)."""
+        return self._paginate(f"{campaign_id}/ads", {"fields": fields})
 
     def update_status(self, object_id, status):
         """Update the status of a campaign, ad set, or ad."""

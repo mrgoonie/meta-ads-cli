@@ -12,7 +12,7 @@ from meta_ads.campaign import create_full_campaign, print_campaign_status
 from meta_ads.config import load_config, validate_config, ConfigError
 
 
-def get_api(dry_run=False):
+def get_api(dry_run=False, verbose=False):
     """Create a MetaAdsAPI instance from environment variables."""
     access_token = os.getenv("META_ACCESS_TOKEN")
     ad_account_id = os.getenv("META_AD_ACCOUNT_ID")
@@ -41,21 +41,27 @@ def get_api(dry_run=False):
         page_id=page_id,
         api_version=api_version,
         dry_run=dry_run,
+        verbose=verbose,
     )
 
 
 @click.group()
 @click.version_option(version=__version__, prog_name="meta-ads")
-def cli():
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed API request/response info for debugging.")
+@click.pass_context
+def cli(ctx, verbose):
     """Create and manage Meta ad campaigns from your terminal."""
     load_dotenv()
+    ctx.ensure_object(dict)
+    ctx.obj["verbose"] = verbose
 
 
 @cli.command()
 @click.option("--config", "config_path", default="campaign.yaml", help="Path to campaign YAML config.")
 @click.option("--dry-run", is_flag=True, help="Preview what would be created without making API calls.")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
-def create(config_path, dry_run, yes):
+@click.pass_context
+def create(ctx, config_path, dry_run, yes):
     """Create a full campaign from a YAML config file."""
     try:
         config = load_config(config_path)
@@ -84,7 +90,7 @@ def create(config_path, dry_run, yes):
             click.echo("Aborted.")
             sys.exit(0)
 
-    api = get_api(dry_run=dry_run)
+    api = get_api(dry_run=dry_run, verbose=ctx.obj["verbose"])
 
     try:
         result = create_full_campaign(api, config)
@@ -110,9 +116,10 @@ def create(config_path, dry_run, yes):
 
 @cli.command()
 @click.argument("campaign_id")
-def status(campaign_id):
+@click.pass_context
+def status(ctx, campaign_id):
     """Show the status of a campaign and its ads."""
-    api = get_api()
+    api = get_api(verbose=ctx.obj["verbose"])
     try:
         print_campaign_status(api, campaign_id)
     except MetaAPIError as e:
@@ -122,9 +129,10 @@ def status(campaign_id):
 
 @cli.command()
 @click.argument("campaign_id")
-def pause(campaign_id):
+@click.pass_context
+def pause(ctx, campaign_id):
     """Pause a campaign."""
-    api = get_api()
+    api = get_api(verbose=ctx.obj["verbose"])
     try:
         api.update_status(campaign_id, "PAUSED")
         click.echo(click.style(f"Campaign {campaign_id} paused.", fg="green"))
@@ -136,14 +144,15 @@ def pause(campaign_id):
 @cli.command()
 @click.argument("campaign_id")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
-def activate(campaign_id, yes):
+@click.pass_context
+def activate(ctx, campaign_id, yes):
     """Activate a campaign. This will start spending your budget."""
     if not yes:
         if not click.confirm(click.style("This will start spending your ad budget. Continue?", fg="yellow")):
             click.echo("Aborted.")
             return
 
-    api = get_api()
+    api = get_api(verbose=ctx.obj["verbose"])
     try:
         api.update_status(campaign_id, "ACTIVE")
         click.echo(click.style(f"Campaign {campaign_id} activated.", fg="green"))
@@ -155,14 +164,15 @@ def activate(campaign_id, yes):
 @cli.command()
 @click.argument("campaign_id")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
-def delete(campaign_id, yes):
+@click.pass_context
+def delete(ctx, campaign_id, yes):
     """Delete a campaign. This cannot be undone."""
     if not yes:
         if not click.confirm(click.style("This will permanently delete the campaign. Continue?", fg="red")):
             click.echo("Aborted.")
             return
 
-    api = get_api()
+    api = get_api(verbose=ctx.obj["verbose"])
     try:
         api.delete_campaign(campaign_id)
         click.echo(click.style(f"Campaign {campaign_id} deleted.", fg="green"))

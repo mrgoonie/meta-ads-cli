@@ -40,6 +40,13 @@ VALID_CTAS = [
 
 VALID_STATUSES = ["PAUSED", "ACTIVE"]
 
+VALID_SPECIAL_AD_CATEGORIES = [
+    "CREDIT",
+    "EMPLOYMENT",
+    "HOUSING",
+    "SOCIAL_ISSUES_ELECTIONS_POLITICS",
+]
+
 
 class ConfigError(Exception):
     """Raised when campaign config is invalid."""
@@ -62,13 +69,18 @@ def load_config(path):
     if not config:
         raise ConfigError("Config file is empty")
 
-    # Resolve image paths relative to the YAML file
-    config_dir = config_path.parent
+    # Resolve image paths relative to the YAML file, with path traversal check
+    config_dir = config_path.parent.resolve()
     for ad in config.get("ads", []):
         if "image" in ad:
-            image_path = Path(ad["image"])
+            original = ad["image"]
+            image_path = Path(original)
             if not image_path.is_absolute():
-                ad["image"] = str(config_dir / image_path)
+                image_path = config_dir / image_path
+            resolved = image_path.resolve()
+            if not resolved.is_relative_to(config_dir):
+                raise ConfigError(f"Image path '{original}' escapes config directory")
+            ad["image"] = str(resolved)
 
     return config
 
@@ -90,6 +102,13 @@ def validate_config(config):
         status = campaign.get("status", "PAUSED")
         if status not in VALID_STATUSES:
             errors.append(f"campaign.status must be PAUSED or ACTIVE")
+        special_cats = campaign.get("special_ad_categories", [])
+        for cat in special_cats:
+            if cat not in VALID_SPECIAL_AD_CATEGORIES:
+                errors.append(
+                    f"campaign.special_ad_categories '{cat}' is not valid. "
+                    f"Options: {', '.join(VALID_SPECIAL_AD_CATEGORIES)}"
+                )
 
     # Ad set section
     ad_set = config.get("ad_set")
@@ -98,8 +117,17 @@ def validate_config(config):
     else:
         if not ad_set.get("name"):
             errors.append("ad_set.name is required")
-        if not ad_set.get("daily_budget"):
+        daily_budget = ad_set.get("daily_budget")
+        if daily_budget is None:
             errors.append("ad_set.daily_budget is required (in cents, e.g. 1000 = $10/day)")
+        else:
+            try:
+                budget_int = int(daily_budget)
+            except (TypeError, ValueError):
+                errors.append(f"ad_set.daily_budget must be an integer, got: {daily_budget!r}")
+                budget_int = None
+            if budget_int is not None and budget_int <= 0:
+                errors.append(f"ad_set.daily_budget must be > 0, got: {daily_budget}")
         opt_goal = ad_set.get("optimization_goal", "LINK_CLICKS")
         if opt_goal not in VALID_OPTIMIZATION_GOALS:
             errors.append(f"ad_set.optimization_goal '{opt_goal}' is not valid. Options: {', '.join(VALID_OPTIMIZATION_GOALS)}")
@@ -130,6 +158,14 @@ def validate_config(config):
             cta = ad.get("cta", "LEARN_MORE")
             if cta not in VALID_CTAS:
                 errors.append(f"{prefix}.cta '{cta}' is not valid. Options: {', '.join(VALID_CTAS)}")
+
+        # Check for duplicate ad names
+        ad_names = [ad.get("name") for ad in ads if ad.get("name")]
+        seen = set()
+        for name in ad_names:
+            if name in seen:
+                errors.append(f"Duplicate ad name: '{name}'. Each ad must have a unique name.")
+            seen.add(name)
 
     if errors:
         raise ConfigError("\n".join(f"  - {e}" for e in errors))

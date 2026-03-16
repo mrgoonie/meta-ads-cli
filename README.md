@@ -1,4 +1,4 @@
-# meta-ads-cli
+# Meta Ads CLI
 
 Create and manage Meta (Facebook/Instagram) ad campaigns from your terminal.
 

@@ -2,7 +2,8 @@
 
 Create and manage Meta (Facebook/Instagram) ad campaigns from your terminal.
 
-> Built by [Attainment Labs](https://attainmentlabs.com)
+> Maintained by [ClaudeKit](https://claudekit.cc)
+> Forked from [Attainment Labs](https://attainmentlabs.com)
 
 ## Why
 
